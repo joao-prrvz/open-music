@@ -1,0 +1,24 @@
+@using TagLib
+<div>
+    <img class="h-100 rounded" src="@(Music?.Cover ?? "/img/cover-placeholder.png")" alt="album cover"/>
+    <h3>@(Music?.Title ?? "Unknown Title")</h3>
+    <h4>@(Music?.Author ?? "Unknown Author")</h4>
+    <audio title="@Music?.Title" src="@Music?.Audio" controls></audio>
+</div>
+
+@code {
+    public List<Music> Musics { get; set; } = [];
+    public Music? Music { get; set; } = null;
+
+    public void Play()
+    {
+        Music = Musics[0];
+        StateHasChanged();
+    }
+    
+    private string ConvertBytesToBase64(byte[] imageBytes, string mimeType)
+    {
+        string base64 = Convert.ToBase64String(imageBytes);
+        return $"data:{mimeType};base64,{base64}";
+    }
+}

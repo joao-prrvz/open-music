@@ -1,0 +1,64 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.Razor">
+	
+	<PropertyGroup>
+		<OutputType>WinExe</OutputType>
+		<TargetFramework>net10.0</TargetFramework>
+		<ApplicationIcon>favicon.ico</ApplicationIcon>
+		<IncludeAllContentForSelfExtract>true</IncludeAllContentForSelfExtract>
+		<ErrorOnDuplicatePublishOutputFiles>false</ErrorOnDuplicatePublishOutputFiles>
+		<PublishAot>true</PublishAot>
+		<PublishTrimmed>False</PublishTrimmed>
+		<AssemblyName>OpenMusic</AssemblyName>
+		<RootNamespace>OpenMusic</RootNamespace>
+		<LangVersion>14</LangVersion>
+		<Nullable>enable</Nullable>
+	</PropertyGroup>
+	
+	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
+	  <Optimize>False</Optimize>
+	</PropertyGroup>
+
+	<ItemGroup Condition="$(RuntimeIdentifier.StartsWith('win'))">
+		<RdXmlFile Include="rd.xml" />
+		<RdXmlFile Include="Microsoft.AspNetCore.Components.Web.rd.xml" />
+		<IlcArg Include="--nometadatablocking" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<Content Update="wwwroot\**">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</Content>
+	</ItemGroup>
+
+	<ItemGroup>
+	  <None Update="favicon.ico">
+	    <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+	  </None>
+	</ItemGroup>
+
+	<ItemGroup>
+	  <PackageReference Include="FFMpegCore" Version="5.5.0" />
+	  <PackageReference Include="Microsoft.DotNet.ILCompiler" Version="10.0.12" />
+	  <PackageReference Include="Microsoft.NET.ILLink.Tasks" Version="10.0.12" />
+	  <PackageReference Include="Photino.Blazor" Version="4.0.13" />
+	  <PackageReference Include="TagLibSharp" Version="2.3.0" />
+	  <PackageReference Include="Xabe.FFmpeg" Version="6.0.2" />
+	  <PackageReference Include="Xabe.FFmpeg.Downloader" Version="6.0.2" />
+	  <PackageReference Include="YoutubeExplode" Version="6.6.2" />
+	  <PackageReference Include="YTMusicAPI" Version="1.0.10" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <_ContentIncludedByDefault Remove="wwwroot\css\bootstrap\bootstrap.min.css" />
+	  <_ContentIncludedByDefault Remove="wwwroot\css\bootstrap\bootstrap.min.css.map" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <Folder Include="wwwroot\js\" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <UpToDateCheckInput Remove="Components\NavLink.razor" />
+	</ItemGroup>
+
+</Project>

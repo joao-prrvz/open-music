@@ -1,0 +1,165 @@
+﻿@page "/"
+@using System.IO
+@using System.Text.RegularExpressions
+@using OpenMusic.Components
+@using TagLib
+@using Xabe.FFmpeg
+@using Xabe.FFmpeg.Downloader
+@inject IJSRuntime JS
+@inject HttpClient Http;
+
+
+<div class="flex flex-col justify-between h-full w-full min-h-0">
+    <div class="h-full min-h-0 p-4">
+        <img class="rounded aspect-square h-full w-auto" src="img/cover-placeholder.png" alt="20"/>
+    </div>
+    <div>
+        <input type="range" min="0" max="100" value="40" class="range range-xs rounded-none w-full"/>
+        <div class="grid grid-cols-3 bg-base-200 items-center p-2">
+            <div class="flex items-center">
+                <button class="btn p-0">
+                    <i class="text-5xl bi bi-skip-start-fill"></i>
+                </button>
+                <button class="btn p-0">
+                    <i class="text-6xl bi bi-play-fill"></i>
+                </button>
+                <button class="btn p-0">
+                    <i class="text-5xl bi bi-skip-end-fill"></i>
+                </button>
+                <p>
+                    @TimeSpan.FromSeconds(125).ToString(@"mm\:ss")
+                </p>
+            </div>
+            <div class="flex items-center justify-self-center">
+                <div class="avatar">
+                    <div class="w-12 rounded">
+                        <img alt="Tailwind-CSS-Avatar-component" src="https://img.daisyui.com/images/profile/demo/batperson@192.webp"/>
+                    </div>
+                </div>
+                <p class="px-4">
+                    Title
+                    <br>
+                    <span class="opacity-75 text-sm">Author</span>
+                </p>
+                <button class="btn p-0">
+                    <i class="text-3xl bi bi-cloud-download"></i>
+                </button>
+            </div>
+
+            <div class="flex items-center justify-self-end">
+                <button class="btn p-0">
+                    <i class="text-3xl bi bi-volume-up"></i>
+                </button>
+                <button class="btn p-0">
+                    <i class="text-3xl bi bi-repeat"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+@code {
+    private Music? _music;
+    protected override async Task OnInitializedAsync()
+    {
+        SearchClient client = new();
+        QueryRequest query = new()
+        {
+            Query = "En Feu - Soprano"
+        };
+        SearchingResult<Track> result = await client.SearchTracksAsync(query, CancellationToken.None);
+        Track[] tracks = [..result.Result];
+        Track track = tracks[0];
+        YoutubeClient ytClient = new();
+        StreamManifest manifest = await ytClient.Videos.Streams.GetManifestAsync(track.Url);
+        IStreamInfo stream = manifest.GetAudioOnlyStreams()
+            .Where(s => s.Container == Container.WebM)
+            .GetWithHighestBitrate();
+        string coverUrl = GetResizedThumbnailUrl(track.Thumbnails[0].Url, 500);
+        _music = new(track.Title, track.Author, stream.Url, coverUrl);
+       
+
+    }
+
+    private async Task DownloadMusic(YoutubeClient ytClient, IStreamInfo stream, Track track, string coverUrl)
+    {
+        var progress = new Progress<double>(percent =>
+            JS.InvokeVoidAsync("console.log",$"Progress - Song: {Math.Round(percent * 100, 2)}%"));
+        await ytClient.Videos.Streams.DownloadAsync(stream, $"/tmp/{track.Title}.webm", progress);
+        byte[] imageBytes = await Http.GetByteArrayAsync(coverUrl);
+        Music music = new(track.Title, track.Author, $"/home/joao/Music/{track.Title}.mp3");
+        
+        await ConvertWebmToMp3Async($"/tmp/{music.Title}.webm", music.FilePath);
+        var file = TagLib.File.Create(music.FilePath);
+        var picture = new Picture(new ByteVector(imageBytes))
+        {
+            Type = PictureType.FrontCover,
+            MimeType = "image/jpeg", // adjust if the thumbnail isn't actually JPEG
+            Description = "Cover"
+        };
+        file.Tag.Pictures = [picture];
+        file.Tag.Title = music.Title;
+        file.Tag.Performers = [music.Author];
+        file.Save();
+    } 
+    
+
+    private string GetResizedThumbnailUrl(string originalUrl, int size = 250)
+    {
+        // Replaces the w{n}-h{n} portion of the URL with the desired size
+        return Regex.Replace(originalUrl, @"w\d+-h\d+", $"w{size}-h{size}");
+    }
+    
+    
+    async Task ConvertWebmToMp3Async(string webmPath, string mp3Path)
+    {
+        await FFmpegDownloader.GetLatestVersion(FFmpegVersion.Official); // downloads ffmpeg binary once, if missing
+    
+        IConversion conversion = await FFmpeg.Conversions.FromSnippet.Convert(webmPath, mp3Path);
+        await conversion.Start();
+    }
+    
+    async Task DownloadFileWithProgressAsync(
+        string url,
+        string outputPath,
+        IProgress<float>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        using HttpClient client = new();
+        client.Timeout = Timeout.InfiniteTimeSpan; // rely on manual cancellation instead
+
+        using HttpResponseMessage response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        response.EnsureSuccessStatusCode();
+
+        string contentType = response.Content.Headers.ContentType?.MediaType ?? "audio/mp4";
+        outputPath += $".{contentType.Split("/")[1]}";
+        
+        long? totalBytes = response.Content.Headers.ContentLength;
+
+        using Stream contentStream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using FileStream fileStream = new FileStream(
+            outputPath, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize: 81920, useAsync: true);
+
+        byte[] buffer = new byte[81920]; // 80 KB buffer
+        long totalRead = 0;
+        int bytesRead;
+
+        while ((bytesRead = await contentStream.ReadAsync(buffer, 0, buffer.Length, cancellationToken)) > 0)
+        {
+            await fileStream.WriteAsync(buffer, 0, bytesRead, cancellationToken);
+            totalRead += bytesRead;
+
+            if (totalBytes.HasValue && progress != null)
+            {
+                float percent = (float)totalRead / totalBytes.Value * 100;
+                progress.Report(MathF.Round(percent, 2));
+            }
+        }
+    }
+    private string ConvertBytesToBase64(byte[] imageBytes, string mimeType)
+    {
+        string base64 = Convert.ToBase64String(imageBytes);
+        return $"data:{mimeType};base64,{base64}";
+    }
+}
+
+
