@@ -1,6 +1,7 @@
 ﻿@page "/"
 @using System.IO
 @using System.Text.RegularExpressions
+@using System.Threading.Tasks
 @using OpenMusic.Components
 @using TagLib
 @using Xabe.FFmpeg
@@ -10,62 +11,77 @@
 
 
 <div class="flex flex-col justify-between h-full w-full min-h-0">
-    <div class="h-full min-h-0 p-4">
-        <img class="rounded aspect-square h-full w-auto" src="img/cover-placeholder.png" alt="20"/>
-    </div>
-    <div>
-        <input type="range" min="0" max="100" value="40" class="range range-xs rounded-none w-full"/>
-        <div class="grid grid-cols-3 bg-base-200 items-center p-2">
-            <div class="flex items-center">
-                <button class="btn p-0">
-                    <i class="text-5xl bi bi-skip-start-fill"></i>
-                </button>
-                <button class="btn p-0">
-                    <i class="text-6xl bi bi-play-fill"></i>
-                </button>
-                <button class="btn p-0">
-                    <i class="text-5xl bi bi-skip-end-fill"></i>
-                </button>
-                <p>
-                    @TimeSpan.FromSeconds(125).ToString(@"mm\:ss")
-                </p>
-            </div>
-            <div class="flex items-center justify-self-center">
-                <div class="avatar">
-                    <div class="w-12 rounded">
-                        <img alt="Tailwind-CSS-Avatar-component" src="https://img.daisyui.com/images/profile/demo/batperson@192.webp"/>
-                    </div>
-                </div>
-                <p class="px-4">
-                    Title
-                    <br>
-                    <span class="opacity-75 text-sm">Author</span>
-                </p>
-                <button class="btn p-0">
-                    <i class="text-3xl bi bi-cloud-download"></i>
-                </button>
-            </div>
+	<div class="h-full min-h-0 p-4">
+		<img class="rounded aspect-square h-full w-auto" src="@(_music?.Cover ?? "img/cover-placeholder.png")" alt="20"/>
+	</div>
+	<div>
+        <input type="range" min="0" max="@_duration" value="@_time" class="range range-xs rounded-none w-full" />
+		<div class="grid grid-cols-3 bg-base-200 items-center p-2">
+			<div class="flex items-center">
+				<button class="btn p-0">
+					<i class="text-5xl bi bi-skip-start-fill"></i>
+				</button>
+				<button class="btn p-0" @onclick="() => Toggle()">
+					<i class="text-6xl bi bi-@(_paused ? "play" : "pause")-fill"></i>
+				</button>
+				<button class="btn p-0">
+					<i class="text-5xl bi bi-skip-end-fill"></i>
+				</button>
+				<p>
+					@TimeSpan.FromSeconds(125).ToString(@"mm\:ss")
+				</p>
+			</div>
+			<div class="flex items-center justify-self-center">
+				<div class="avatar">
+					<div class="w-12 rounded">
+						<img alt="Tailwind-CSS-Avatar-component" src="@(_music?.Cover ?? "img/cover-placeholder.png")" />
+					</div>
+				</div>
+				<p class="px-4">
+					@_music?.Title
+					<br>
+					<span class="opacity-75 text-sm">@_music?.Author</span>
+				</p>
+				<button class="btn p-0">
+					<i class="text-3xl bi bi-cloud-download"></i>
+				</button>
+			</div>
 
-            <div class="flex items-center justify-self-end">
-                <button class="btn p-0">
-                    <i class="text-3xl bi bi-volume-up"></i>
-                </button>
-                <button class="btn p-0">
-                    <i class="text-3xl bi bi-repeat"></i>
-                </button>
-            </div>
-        </div>
-    </div>
+			<div class="flex items-center justify-self-end">
+				<button class="btn p-0">
+					<i class="text-3xl bi bi-volume-up"></i>
+				</button>
+				<button class="btn p-0">
+					<i class="text-3xl bi bi-repeat"></i>
+				</button>
+			</div>
+		</div>
+	</div>
 </div>
+<audio id="player-audio" 
+    src="@_music?.Audio"
+    title="@_music?.Title"
+    @ondurationchange="UpdateDuration" 
+    @ontimeupdate="UpdateTime" 
+    @onpause="() => Toggle(true)" 
+    @onplay="() => Toggle(false)"></audio>
+
 @code {
     private Music? _music;
+    IJSObjectReference _audio;
+    IJSObjectReference _module;
+    private bool _paused = true;
+    private int _time;
+    private int _duration;
+
     protected override async Task OnInitializedAsync()
     {
         SearchClient client = new();
         QueryRequest query = new()
         {
-            Query = "En Feu - Soprano"
+            Query = "Espresso"
         };
+        _module = await JS.InvokeAsync<IJSObjectReference>("import", "/Pages/Index.razor.js");
         SearchingResult<Track> result = await client.SearchTracksAsync(query, CancellationToken.None);
         Track[] tracks = [..result.Result];
         Track track = tracks[0];
@@ -76,8 +92,26 @@
             .GetWithHighestBitrate();
         string coverUrl = GetResizedThumbnailUrl(track.Thumbnails[0].Url, 500);
         _music = new(track.Title, track.Author, stream.Url, coverUrl);
-       
+        _audio = await JS.InvokeAsync<IJSObjectReference>("document.querySelector", "#player-audio");
+    }
 
+    private async Task UpdateTime()
+    {
+        _time = (int)(await _module.InvokeAsync<float>("getCurrentTime", _audio));
+    }
+
+    private async Task UpdateDuration()
+    {
+        _duration = (int)(await _module.InvokeAsync<float>("getDuration", _audio));
+    }
+
+    private void Toggle(bool? value = null)
+    {
+        _paused = value ?? !_paused;
+        if (_paused)
+            _audio.InvokeVoidAsync("pause");
+        else
+            _audio.InvokeVoidAsync("play");
     }
 
     private async Task DownloadMusic(YoutubeClient ytClient, IStreamInfo stream, Track track, string coverUrl)
@@ -100,7 +134,7 @@
         file.Tag.Title = music.Title;
         file.Tag.Performers = [music.Author];
         file.Save();
-    } 
+    }
     
 
     private string GetResizedThumbnailUrl(string originalUrl, int size = 250)
